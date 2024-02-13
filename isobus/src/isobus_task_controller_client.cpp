@@ -458,7 +458,8 @@ namespace isobus
 				{
 					enableStatusMessage = true;
 					statusMessageTimestamp_ms = SystemTiming::get_timestamp_ms();
-					set_state(StateMachineState::RequestVersion);
+//					set_state(StateMachineState::RequestVersion);
+					set_state(StateMachineState::RequestLanguage);
 				}
 				else if (SystemTiming::time_expired_ms(stateMachineTimestamp_ms, TWO_SECOND_TIMEOUT_MS))
 				{
