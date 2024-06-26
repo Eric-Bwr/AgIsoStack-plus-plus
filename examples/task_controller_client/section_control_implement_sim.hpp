@@ -4,7 +4,7 @@
 /// @brief Defines a class that emulates a section control capable ISO implement.
 /// @author Adrian Del Grosso
 ///
-/// @copyright 2023 Adrian Del Grosso
+/// @copyright 2023 The Open-Agriculture Developers
 //================================================================================================
 #ifndef SECTION_CONTROL_IMPLEMENT_SIM_HPP
 #define SECTION_CONTROL_IMPLEMENT_SIM_HPP
@@ -160,7 +160,7 @@ public:
 	/// @param[in] parentPointer A pointer to the class instance this callback is for
 	static bool request_value_command_callback(std::uint16_t elementNumber,
 	                                           std::uint16_t DDI,
-	                                           std::uint32_t &value,
+	                                           std::int32_t &value,
 	                                           void *parentPointer);
 
 	/// @brief A callback that will be used by the TC client to set values
@@ -171,7 +171,7 @@ public:
 	/// @returns true
 	static bool value_command_callback(std::uint16_t elementNumber,
 	                                   std::uint16_t DDI,
-	                                   std::uint32_t processVariableValue,
+	                                   std::int32_t processVariableValue,
 	                                   void *parentPointer);
 
 private:

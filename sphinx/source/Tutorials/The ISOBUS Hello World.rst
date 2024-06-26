@@ -43,7 +43,7 @@ Let's set up a standard, empty C++ program in a file called "main.cpp", and incl
 
 The file `"can_network_manager.hpp" <https://delgrossoengineering.com/isobus-docs/can__network__manager_8hpp.html>`_ is the header file for the main interface for the CAN stack.
 
-The file `"socket_can_interface.hpp" <https://github.com/Open-Agriculture/AgIsoStack-plus-plus/blob/main/socket_can/include/socket_can_interface.hpp>`_ is a hardware tie-in for socket CAN.
+The file `"socket_can_interface.hpp" <https://delgrossoengineering.com/isobus-docs/socket__can__interface_8hpp>`_ is a hardware tie-in for socket CAN.
 
 The file `"can_partnered_control_function.hpp" <https://delgrossoengineering.com/isobus-docs/can__partnered__control__function_8hpp.html>`_ Defines the interface for a *partnered control function*, which is another device you want to communicate with.
 
@@ -59,7 +59,8 @@ Check out the :doc:`concepts section <../Concepts>`, if you need to brush up on 
 
 Let's create a `NAME <https://delgrossoengineering.com/isobus-docs/classisobus_1_1NAME.html>`_ in our program.
 
-NOTE: Everything that is part of the stack is in the namespace `"isobus" <https://delgrossoengineering.com/isobus-docs/namespaceisobus.html>`_!
+.. note::
+   Everything that is part of the stack is in the namespace `"isobus" <https://delgrossoengineering.com/isobus-docs/namespaceisobus.html>`_!
 
 .. code-block:: c++
 
@@ -131,7 +132,7 @@ In this example, I'll use a shared_ptr to store my InternalControlFunction, but 
     isobus::NAME myNAME(0); // Create an empty NAME
     std::shared_ptr<isobus::InternalControlFunction> myECU = nullptr; // A pointer to hold our InternalControlFunction
 
-    //! Make sure you change these for your device!!!!
+    //! Consider customizing some of these fields, like the function code, to be representative of your device
     myNAME.set_arbitrary_address_capable(true);
     myNAME.set_industry_group(1);
     myNAME.set_device_class(0);
@@ -143,12 +144,12 @@ In this example, I'll use a shared_ptr to store my InternalControlFunction, but 
     myNAME.set_manufacturer_code(1407);
 
     // Create our InternalControlFunction
-    myECU = isobus::InternalControlFunction::create(myNAME, 0x1C, 0);
+    myECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(myNAME, 0);
 
     return 0;
    }
 
-In this example, I created my control function with a default address of 0x1C, and assigned it to CAN channel 0.
+In this example, I created my control function with a preferred address of 0x1C, and assigned it to CAN channel 0.
 
 Now, we've got a little problem... What is CAN channel 0?
 
@@ -231,7 +232,7 @@ Let's see what we've got so far:
          return -2;
       }
 
-      //! Make sure you change these for your device!!!!
+      //! Consider customizing some of these fields, like the function code, to be representative of your device
       myNAME.set_arbitrary_address_capable(true);
       myNAME.set_industry_group(1);
       myNAME.set_device_class(0);
@@ -243,7 +244,7 @@ Let's see what we've got so far:
       myNAME.set_manufacturer_code(1407);
 
       // Create our InternalControlFunction
-      myECU = isobus::InternalControlFunction::create(myNAME, 0x1C, 0);
+      myECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(myNAME, 0);
 
       return 0;
    }
@@ -255,9 +256,9 @@ Cleaning up
 
 Whenever the program ends, we want to call :code:`isobus::CANHardwareInterface::stop();` to clean up the hardware layer and stop the threads we started with :code:`isobus::CANHardwareInterface::start();`.
 
-Additionally, we want to call :code:`isobus::CANHardwareInterface::stop();` if the user presses control+c (user sends a SIGINT signal to our program). So let's add a little signal handler that'll gracefully clean up if that happens.
+Additionally, we want to exit if the user presses control+c (user sends a SIGINT signal to our program). So let's add a little signal handler that'll gracefully clean up if that happens.
 
-Make sure to include `csignal`.
+Make sure to include the `csignal` and `atomic` headers. `csignal` is for handling signals, like control+c, and `atomic` is for handling the `running` flag, which we'll use to safely know when to exit.
 
 .. code-block:: c++
 
@@ -266,14 +267,17 @@ Make sure to include `csignal`.
    #include "isobus/hardware_integration/can_hardware_interface.hpp"
    #include "isobus/isobus/can_partnered_control_function.hpp"
 
+   #include <atomic>
    #include <memory>
    #include <csignal>
    #include <iostream>
 
+   // This helps us handle control+c and other requests to terminate the program
+   static std::atomic_bool running = { true };
+   
    void signal_handler(int)
    {
-      isobus::CANHardwareInterface::stop(); // Clean up the threads
-		_exit(EXIT_FAILURE);
+   	running = false;
    }
 
    int main()
@@ -295,7 +299,7 @@ Make sure to include `csignal`.
       // Handle control+c
       std::signal(SIGINT, signal_handler);
 
-      //! Make sure you change these for your device!!!!
+      //! Consider customizing some of these fields, like the function code, to be representative of your device
       myNAME.set_arbitrary_address_capable(true);
       myNAME.set_industry_group(1);
       myNAME.set_device_class(0);
@@ -307,7 +311,7 @@ Make sure to include `csignal`.
       myNAME.set_manufacturer_code(1407);
 
       // Create our InternalControlFunction
-      myECU = isobus::InternalControlFunction::create(myNAME, 0x1C, 0);
+      myECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(myNAME, 0);
 
       // Clean up the threads
       isobus::CANHardwareInterface::stop();
@@ -333,14 +337,17 @@ The total result:
    #include "isobus/hardware_integration/can_hardware_interface.hpp"
    #include "isobus/isobus/can_partnered_control_function.hpp"
 
+   #include <atomic>
    #include <memory>
    #include <csignal>
    #include <iostream>
 
+   // This helps us handle control+c and other requests to terminate the program
+   static std::atomic_bool running = { true };
+   
    void signal_handler(int)
    {
-   	isobus::CANHardwareInterface::stop(); // Clean up the threads
-		_exit(EXIT_FAILURE);
+   	running = false;
    }
    
    int main()
@@ -362,7 +369,7 @@ The total result:
     // Handle control+c
     std::signal(SIGINT, signal_handler);
 
-    //! Make sure you change these for your device!!!!
+    //! Consider customizing some of these fields, like the function code, to be representative of your device
     myNAME.set_arbitrary_address_capable(true);
     myNAME.set_industry_group(1);
     myNAME.set_device_class(0);
@@ -374,7 +381,7 @@ The total result:
     myNAME.set_manufacturer_code(1407);
 
     // Create our InternalControlFunction
-    myECU = isobus::InternalControlFunction::create(myNAME, 0x1C, 0);
+    myECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(myNAME, 0);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
@@ -403,7 +410,7 @@ Here is the code we'll need to add:
 
     std::array<std::uint8_t, isobus::CAN_DATA_LENGTH> messageData = {0}; // Data is just all zeros
 
-   isobus::CANNetworkManager::CANNetwork.send_can_message(0xEF00, messageData.data(), isobus::CAN_DATA_LENGTH, myECU.get());
+   isobus::CANNetworkManager::CANNetwork.send_can_message(0xEF00, messageData.data(), isobus::CAN_DATA_LENGTH, myECU);
 
    // Give the CAN stack some time to send the message
    std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -444,7 +451,7 @@ Add the following to a new file called CMakeLists.txt:
    
    add_executable(isobus_hello_world main.cpp)
    
-   target_link_libraries(isobus_hello_world PRIVATE isobus::Isobus isobus::HardwareIntegration Threads::Threads)
+   target_link_libraries(isobus_hello_world PRIVATE isobus::Isobus isobus::HardwareIntegration isobus::Utility Threads::Threads)
 
 Save and close the file.
 

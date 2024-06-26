@@ -13,4 +13,6 @@ Tutorials
    Tutorials/PGN Requests
    Tutorials/Debug Logging
    Tutorials/ISOBUS Shortcut Button
+   Tutorials/Task Controller Basics
+   Tutorials/Task Controller Client
    Tutorials/ESP32 PlatformIO

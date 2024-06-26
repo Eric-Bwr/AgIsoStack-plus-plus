@@ -10,12 +10,10 @@ set(ISOBUS_INCLUDE_DIR "include/isobus/isobus")
 # Set source files
 set(ISOBUS_SRC
     "can_NAME.cpp"
-    "can_protocol.cpp"
     "can_identifier.cpp"
     "can_control_function.cpp"
     "can_message.cpp"
     "can_network_manager.cpp"
-    "can_address_claim_state_machine.cpp"
     "can_internal_control_function.cpp"
     "can_partnered_control_function.cpp"
     "can_NAME_filter.cpp"
@@ -32,6 +30,7 @@ set(ISOBUS_SRC
     "nmea2000_fast_packet_protocol.cpp"
     "isobus_data_dictionary.cpp"
     "isobus_language_command_interface.cpp"
+    "isobus_time_date_interface.cpp"
     "isobus_task_controller_client_objects.cpp"
     "isobus_task_controller_client.cpp"
     "isobus_device_descriptor_object_pool.cpp"
@@ -43,8 +42,12 @@ set(ISOBUS_SRC
     "isobus_virtual_terminal_objects.cpp"
     "isobus_virtual_terminal_client_state_tracker.cpp"
     "isobus_virtual_terminal_client_update_helper.cpp"
+    "isobus_heartbeat.cpp"
+    "isobus_task_controller_server.cpp"
+    "isobus_task_controller_server_options.cpp"
     "nmea2000_message_definitions.cpp"
     "nmea2000_message_interface.cpp"
+    "isobus_device_descriptor_object_pool_helpers.cpp"
     "can_message_data.cpp")
 
 # Prepend the source directory path to all the source files
@@ -53,14 +56,12 @@ prepend(ISOBUS_SRC ${ISOBUS_SRC_DIR} ${ISOBUS_SRC})
 # Set the include files
 set(ISOBUS_INCLUDE
     "can_NAME.hpp"
-    "can_protocol.hpp"
     "can_badge.hpp"
     "can_identifier.hpp"
     "can_control_function.hpp"
     "can_message.hpp"
     "can_general_parameter_group_numbers.hpp"
     "can_network_manager.hpp"
-    "can_address_claim_state_machine.hpp"
     "can_NAME_filter.hpp"
     "can_transport_protocol.hpp"
     "can_transport_protocol_base.hpp"
@@ -79,6 +80,7 @@ set(ISOBUS_INCLUDE
     "isobus_data_dictionary.hpp"
     "isobus_virtual_terminal_objects.hpp"
     "isobus_language_command_interface.hpp"
+    "isobus_time_date_interface.hpp"
     "isobus_standard_data_description_indices.hpp"
     "isobus_task_controller_client_objects.hpp"
     "isobus_task_controller_client.hpp"
@@ -87,18 +89,24 @@ set(ISOBUS_INCLUDE
     "isobus_functionalities.hpp"
     "isobus_speed_distance_messages.hpp"
     "isobus_maintain_power_interface.hpp"
-    "isobus_virtual_terminal_objects.hpp"
     "isobus_virtual_terminal_client_state_tracker.hpp"
     "isobus_virtual_terminal_client_update_helper.hpp"
+    "isobus_heartbeat.hpp"
+    "isobus_task_controller_server.hpp"
+    "isobus_task_controller_server_options.hpp"
     "nmea2000_message_definitions.hpp"
     "nmea2000_message_interface.hpp"
     "isobus_preferred_addresses.hpp"
+    "isobus_device_descriptor_object_pool_helpers.hpp"
     "can_message_data.hpp")
 # Prepend the include directory path to all the include files
 prepend(ISOBUS_INCLUDE ${ISOBUS_INCLUDE_DIR} ${ISOBUS_INCLUDE})
 
 option(DISABLE_CAN_STACK_LOGGER
        "Compiles out all logging to minimize binary size" OFF)
+
+option(DISABLE_ISOBUS_DATA_DICTIONARY
+       "Disables the ISOBUS data dictionary to minimize binary size" OFF)
 
 # Create the library from the source and include files
 add_library(Isobus ${ISOBUS_SRC} ${ISOBUS_INCLUDE})
@@ -110,6 +118,15 @@ set_target_properties(Isobus PROPERTIES CXX_EXTENSIONS OFF)
 if(DISABLE_CAN_STACK_LOGGER)
   message(STATUS "CAN Stack logger is disabled.")
   target_compile_definitions(Isobus PUBLIC DISABLE_CAN_STACK_LOGGER)
+endif()
+
+if(CAN_STACK_DISABLE_THREADS OR ARDUINO)
+  message(STATUS "Disabled built-in multi-threading for CAN stack.")
+  target_compile_definitions(Isobus PUBLIC CAN_STACK_DISABLE_THREADS)
+endif()
+if(DISABLE_ISOBUS_DATA_DICTIONARY)
+  message(STATUS "ISOBUS data dictionary is disabled.")
+  target_compile_definitions(Isobus PUBLIC DISABLE_ISOBUS_DATA_DICTIONARY)
 endif()
 
 # Specify the include directory to be exported for other moduels to use. The

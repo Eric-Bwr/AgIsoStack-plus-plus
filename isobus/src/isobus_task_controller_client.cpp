@@ -4,14 +4,13 @@
 /// @brief A class to manage a client connection to a ISOBUS field computer's task controller
 /// @author Adrian Del Grosso
 ///
-/// @copyright 2023 Adrian Del Grosso
+/// @copyright 2023 The Open-Agriculture Developers
 //================================================================================================
 #include "isobus/isobus/isobus_task_controller_client.hpp"
 
 #include "isobus/isobus/can_general_parameter_group_numbers.hpp"
 #include "isobus/isobus/can_network_manager.hpp"
 #include "isobus/isobus/can_stack_logger.hpp"
-#include "isobus/isobus/isobus_virtual_terminal_client.hpp"
 #include "isobus/utility/system_timing.hpp"
 #include "isobus/utility/to_string.hpp"
 
@@ -19,11 +18,13 @@
 #include <array>
 #include <cassert>
 #include <cstring>
+#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
 #include <thread>
+#endif
 
 namespace isobus
 {
-	TaskControllerClient::TaskControllerClient(std::shared_ptr<PartneredControlFunction> partner, std::shared_ptr<InternalControlFunction> clientSource, std::shared_ptr<VirtualTerminalClient> primaryVT) :
+	TaskControllerClient::TaskControllerClient(std::shared_ptr<PartneredControlFunction> partner, std::shared_ptr<InternalControlFunction> clientSource, std::shared_ptr<PartneredControlFunction> primaryVT) :
 	  languageCommandInterface(clientSource, partner),
 	  partnerControlFunction(partner),
 	  myControlFunction(clientSource),
@@ -71,9 +72,7 @@ namespace isobus
 
 	void TaskControllerClient::add_request_value_callback(RequestValueCommandCallback callback, void *parentPointer)
 	{
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		RequestValueCommandCallbackInfo callbackData = { callback, parentPointer };
 		requestValueCallbacks.push_back(callbackData);
@@ -81,9 +80,7 @@ namespace isobus
 
 	void TaskControllerClient::add_value_command_callback(ValueCommandCallback callback, void *parentPointer)
 	{
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		ValueCommandCallbackInfo callbackData = { callback, parentPointer };
 		valueCommandsCallbacks.push_back(callbackData);
@@ -91,9 +88,7 @@ namespace isobus
 
 	void TaskControllerClient::remove_request_value_callback(RequestValueCommandCallback callback, void *parentPointer)
 	{
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		RequestValueCommandCallbackInfo callbackData = { callback, parentPointer };
 		auto callbackLocation = std::find(requestValueCallbacks.begin(), requestValueCallbacks.end(), callbackData);
@@ -106,9 +101,7 @@ namespace isobus
 
 	void TaskControllerClient::remove_value_command_callback(ValueCommandCallback callback, void *parentPointer)
 	{
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		ValueCommandCallbackInfo callbackData = { callback, parentPointer };
 		auto callbackLocation = std::find(valueCommandsCallbacks.begin(), valueCommandsCallbacks.end(), callbackData);
@@ -234,9 +227,7 @@ namespace isobus
 	{
 		if (initialized)
 		{
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-			const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+			LOCK_GUARD(Mutex, clientMutex);
 			set_state(StateMachineState::Disconnected);
 		}
 	}
@@ -333,9 +324,7 @@ namespace isobus
 	bool TaskControllerClient::reupload_device_descriptor_object_pool(std::shared_ptr<std::vector<std::uint8_t>> binaryDDOP)
 	{
 		bool retVal = false;
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		if (StateMachineState::Connected == get_state())
 		{
@@ -360,9 +349,7 @@ namespace isobus
 	bool TaskControllerClient::reupload_device_descriptor_object_pool(std::uint8_t const *binaryDDOP, std::uint32_t DDOPSize)
 	{
 		bool retVal = false;
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		if (StateMachineState::Connected == get_state())
 		{
@@ -387,9 +374,7 @@ namespace isobus
 	bool TaskControllerClient::reupload_device_descriptor_object_pool(std::shared_ptr<DeviceDescriptorObjectPool> DDOP)
 	{
 		bool retVal = false;
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		if (StateMachineState::Connected == get_state())
 		{
@@ -498,6 +483,7 @@ namespace isobus
 				if (SystemTiming::time_expired_ms(stateMachineTimestamp_ms, SIX_SECOND_TIMEOUT_MS))
 				{
 					LOG_WARNING("[TC]: Timeout waiting for version request from TC. This is not required, so proceeding anways.");
+					select_language_command_partner();
 					set_state(StateMachineState::RequestLanguage);
 				}
 			}
@@ -507,6 +493,7 @@ namespace isobus
 			{
 				if (send_request_version_response())
 				{
+					select_language_command_partner();
 					set_state(StateMachineState::RequestLanguage);
 				}
 				else if (SystemTiming::time_expired_ms(stateMachineTimestamp_ms, TWO_SECOND_TIMEOUT_MS))
@@ -519,22 +506,10 @@ namespace isobus
 
 			case StateMachineState::RequestLanguage:
 			{
-				if ((serverVersion < static_cast<std::uint8_t>(Version::SecondPublishedEdition)) &&
-				    (nullptr == primaryVirtualTerminal))
-				{
-					languageCommandInterface.set_partner(nullptr); // TC might not reply and no VT specified, so just see if anyone knows.
-					LOG_WARNING("[TC]: The TC is < version 4 but no VT was provided. Language data will be requested globally, which might not be ideal.");
-				}
-
-				if ((serverVersion < static_cast<std::uint8_t>(Version::SecondPublishedEdition)) &&
-				    (nullptr != primaryVirtualTerminal) &&
-				    (primaryVirtualTerminal->languageCommandInterface.send_request_language_command()))
+				if (languageCommandInterface.send_request_language_command())
 				{
 					set_state(StateMachineState::WaitForLanguageResponse);
-				}
-				else if (languageCommandInterface.send_request_language_command())
-				{
-					set_state(StateMachineState::WaitForLanguageResponse);
+					languageCommandWaitingTimestamp_ms = SystemTiming::get_timestamp_ms();
 				}
 				else if (SystemTiming::time_expired_ms(stateMachineTimestamp_ms, SIX_SECOND_TIMEOUT_MS))
 				{
@@ -546,10 +521,35 @@ namespace isobus
 
 			case StateMachineState::WaitForLanguageResponse:
 			{
-				if ((SystemTiming::get_time_elapsed_ms(languageCommandInterface.get_language_command_timestamp()) < SIX_SECOND_TIMEOUT_MS) &&
+				if ((SystemTiming::get_time_elapsed_ms(languageCommandInterface.get_language_command_timestamp()) < TWO_SECOND_TIMEOUT_MS) &&
 				    ("" != languageCommandInterface.get_language_code()))
 				{
 					set_state(StateMachineState::ProcessDDOP);
+				}
+				else if (SystemTiming::time_expired_ms(languageCommandWaitingTimestamp_ms, SIX_SECOND_TIMEOUT_MS))
+				{
+					LOG_WARNING("[TC]: Timeout waiting for language response. Moving on to processing the DDOP anyways.");
+					set_state(StateMachineState::ProcessDDOP);
+				}
+				else if ((SystemTiming::time_expired_ms(stateMachineTimestamp_ms, TWO_SECOND_TIMEOUT_MS)) &&
+				         (nullptr != languageCommandInterface.get_partner()))
+				{
+					LOG_WARNING("[TC]: No response to our request for the language command data, which is unusual.");
+
+					if (nullptr != primaryVirtualTerminal)
+					{
+						LOG_WARNING("[TC]: Falling back to VT for language data.");
+						languageCommandInterface.set_partner(primaryVirtualTerminal);
+						languageCommandInterface.send_request_language_command();
+						stateMachineTimestamp_ms = SystemTiming::get_timestamp_ms();
+					}
+					else
+					{
+						LOG_WARNING("[TC]: Since no VT was specified, falling back to a global request for language data.");
+						languageCommandInterface.set_partner(nullptr);
+						languageCommandInterface.send_request_language_command();
+						stateMachineTimestamp_ms = SystemTiming::get_timestamp_ms();
+					}
 				}
 			}
 			break;
@@ -1032,9 +1032,7 @@ namespace isobus
 
 	void TaskControllerClient::process_queued_commands()
 	{
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 		bool transmitSuccessful = true;
 
 		while (!queuedValueRequests.empty() && transmitSuccessful)
@@ -1043,7 +1041,7 @@ namespace isobus
 
 			for (auto &currentCallback : requestValueCallbacks)
 			{
-				std::uint32_t newValue = 0;
+				std::int32_t newValue = 0;
 				if (currentCallback.callback(currentRequest.elementNumber, currentRequest.ddi, newValue, currentCallback.parent))
 				{
 					transmitSuccessful = send_value_command(currentRequest.elementNumber, currentRequest.ddi, newValue);
@@ -1079,13 +1077,13 @@ namespace isobus
 
 		for (auto &measurementTimeCommand : measurementTimeIntervalCommands)
 		{
-			if (SystemTiming::time_expired_ms(measurementTimeCommand.lastValue, measurementTimeCommand.processDataValue))
+			if (SystemTiming::time_expired_ms(static_cast<std::uint32_t>(measurementTimeCommand.lastValue), static_cast<std::uint32_t>(measurementTimeCommand.processDataValue)))
 			{
 				// Time to update this time interval variable
 				transmitSuccessful = false;
 				for (auto &currentCallback : requestValueCallbacks)
 				{
-					std::uint32_t newValue = 0;
+					std::int32_t newValue = 0;
 					if (currentCallback.callback(measurementTimeCommand.elementNumber, measurementTimeCommand.ddi, newValue, currentCallback.parent))
 					{
 						transmitSuccessful = send_value_command(measurementTimeCommand.elementNumber, measurementTimeCommand.ddi, newValue);
@@ -1095,14 +1093,14 @@ namespace isobus
 
 				if (transmitSuccessful)
 				{
-					measurementTimeCommand.lastValue = SystemTiming::get_timestamp_ms();
+					measurementTimeCommand.lastValue = static_cast<std::int32_t>(SystemTiming::get_timestamp_ms());
 				}
 			}
 		}
 		for (auto &measurementMaxCommand : measurementMaximumThresholdCommands)
 		{
 			// Get the current process data value
-			std::uint32_t newValue = 0;
+			std::int32_t newValue = 0;
 			for (auto &currentCallback : requestValueCallbacks)
 			{
 				if (currentCallback.callback(measurementMaxCommand.elementNumber, measurementMaxCommand.ddi, newValue, currentCallback.parent))
@@ -1130,7 +1128,7 @@ namespace isobus
 		for (auto &measurementMinCommand : measurementMinimumThresholdCommands)
 		{
 			// Get the current process data value
-			std::uint32_t newValue = 0;
+			std::int32_t newValue = 0;
 			for (auto &currentCallback : requestValueCallbacks)
 			{
 				if (currentCallback.callback(measurementMinCommand.elementNumber, measurementMinCommand.ddi, newValue, currentCallback.parent))
@@ -1158,7 +1156,7 @@ namespace isobus
 		for (auto &measurementChangeCommand : measurementOnChangeThresholdCommands)
 		{
 			// Get the current process data value
-			std::uint32_t newValue = 0;
+			std::int32_t newValue = 0;
 			for (auto &currentCallback : requestValueCallbacks)
 			{
 				if (currentCallback.callback(measurementChangeCommand.elementNumber, measurementChangeCommand.ddi, newValue, currentCallback.parent))
@@ -1192,6 +1190,7 @@ namespace isobus
 		    (nullptr != message.get_source_control_function()))
 		{
 			auto parentTC = static_cast<TaskControllerClient *>(parentPointer);
+			auto &clientMutex = parentTC->clientMutex;
 			const auto &messageData = message.get_data();
 
 			switch (message.get_identifier().get_parameter_group_number())
@@ -1562,18 +1561,16 @@ namespace isobus
 						case ProcessDataCommands::RequestValue:
 						{
 							ProcessDataCallbackInfo requestData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-							const std::lock_guard<std::mutex> lock(parentTC->clientMutex);
-#endif
+							LOCK_GUARD(Mutex, clientMutex);
 
 							requestData.ackRequested = false;
 							requestData.elementNumber = (static_cast<std::uint16_t>(messageData[0] >> 4) | (static_cast<std::uint16_t>(messageData[1]) << 4));
 							requestData.ddi = static_cast<std::uint16_t>(messageData[2]) |
 							  (static_cast<std::uint16_t>(messageData[3]) << 8);
-							requestData.processDataValue = (static_cast<std::uint32_t>(messageData[4]) |
-							                                (static_cast<std::uint16_t>(messageData[5]) << 8) |
-							                                (static_cast<std::uint16_t>(messageData[6]) << 16) |
-							                                (static_cast<std::uint16_t>(messageData[7]) << 24));
+							requestData.processDataValue = (static_cast<std::int32_t>(messageData[4]) |
+							                                (static_cast<std::int32_t>(messageData[5]) << 8) |
+							                                (static_cast<std::int32_t>(messageData[6]) << 16) |
+							                                (static_cast<std::int32_t>(messageData[7]) << 24));
 							parentTC->queuedValueRequests.push_back(requestData);
 						}
 						break;
@@ -1581,18 +1578,16 @@ namespace isobus
 						case ProcessDataCommands::Value:
 						{
 							ProcessDataCallbackInfo requestData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-							const std::lock_guard<std::mutex> lock(parentTC->clientMutex);
-#endif
+							LOCK_GUARD(Mutex, clientMutex);
 
 							requestData.ackRequested = false;
 							requestData.elementNumber = (static_cast<std::uint16_t>(messageData[0] >> 4) | (static_cast<std::uint16_t>(messageData[1]) << 4));
 							requestData.ddi = static_cast<std::uint16_t>(messageData[2]) |
 							  (static_cast<std::uint16_t>(messageData[3]) << 8);
-							requestData.processDataValue = (static_cast<std::uint32_t>(messageData[4]) |
-							                                (static_cast<std::uint16_t>(messageData[5]) << 8) |
-							                                (static_cast<std::uint16_t>(messageData[6]) << 16) |
-							                                (static_cast<std::uint16_t>(messageData[7]) << 24));
+							requestData.processDataValue = (static_cast<std::int32_t>(messageData[4]) |
+							                                (static_cast<std::int32_t>(messageData[5]) << 8) |
+							                                (static_cast<std::int32_t>(messageData[6]) << 16) |
+							                                (static_cast<std::int32_t>(messageData[7]) << 24));
 							parentTC->queuedValueCommands.push_back(requestData);
 						}
 						break;
@@ -1600,18 +1595,16 @@ namespace isobus
 						case ProcessDataCommands::SetValueAndAcknowledge:
 						{
 							ProcessDataCallbackInfo requestData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-							const std::lock_guard<std::mutex> lock(parentTC->clientMutex);
-#endif
+							LOCK_GUARD(Mutex, clientMutex);
 
 							requestData.ackRequested = true;
 							requestData.elementNumber = (static_cast<std::uint16_t>(messageData[0] >> 4) | (static_cast<std::uint16_t>(messageData[1]) << 4));
 							requestData.ddi = static_cast<std::uint16_t>(messageData[2]) |
 							  (static_cast<std::uint16_t>(messageData[3]) << 8);
-							requestData.processDataValue = (static_cast<std::uint32_t>(messageData[4]) |
-							                                (static_cast<std::uint16_t>(messageData[5]) << 8) |
-							                                (static_cast<std::uint16_t>(messageData[6]) << 16) |
-							                                (static_cast<std::uint16_t>(messageData[7]) << 24));
+							requestData.processDataValue = (static_cast<std::int32_t>(messageData[4]) |
+							                                (static_cast<std::int32_t>(messageData[5]) << 8) |
+							                                (static_cast<std::int32_t>(messageData[6]) << 16) |
+							                                (static_cast<std::int32_t>(messageData[7]) << 24));
 							parentTC->queuedValueCommands.push_back(requestData);
 						}
 						break;
@@ -1619,18 +1612,16 @@ namespace isobus
 						case ProcessDataCommands::MeasurementTimeInterval:
 						{
 							ProcessDataCallbackInfo commandData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-							const std::lock_guard<std::mutex> lock(parentTC->clientMutex);
-#endif
+							LOCK_GUARD(Mutex, clientMutex);
 
 							commandData.elementNumber = (static_cast<std::uint16_t>(messageData[0] >> 4) | (static_cast<std::uint16_t>(messageData[1]) << 4));
 							commandData.ddi = static_cast<std::uint16_t>(messageData[2]) |
 							  (static_cast<std::uint16_t>(messageData[3]) << 8);
-							commandData.processDataValue = (static_cast<std::uint32_t>(messageData[4]) |
-							                                (static_cast<std::uint16_t>(messageData[5]) << 8) |
-							                                (static_cast<std::uint16_t>(messageData[6]) << 16) |
-							                                (static_cast<std::uint16_t>(messageData[7]) << 24));
-							commandData.lastValue = SystemTiming::get_timestamp_ms();
+							commandData.processDataValue = (static_cast<std::int32_t>(messageData[4]) |
+							                                (static_cast<std::int32_t>(messageData[5]) << 8) |
+							                                (static_cast<std::int32_t>(messageData[6]) << 16) |
+							                                (static_cast<std::int32_t>(messageData[7]) << 24));
+							commandData.lastValue = static_cast<std::int32_t>(SystemTiming::get_timestamp_ms());
 
 							auto previousCommand = std::find(parentTC->measurementTimeIntervalCommands.begin(), parentTC->measurementTimeIntervalCommands.end(), commandData);
 							if (parentTC->measurementTimeIntervalCommands.end() == previousCommand)
@@ -1662,17 +1653,15 @@ namespace isobus
 						case ProcessDataCommands::MeasurementMaximumWithinThreshold:
 						{
 							ProcessDataCallbackInfo commandData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-							const std::lock_guard<std::mutex> lock(parentTC->clientMutex);
-#endif
+							LOCK_GUARD(Mutex, clientMutex);
 
 							commandData.elementNumber = (static_cast<std::uint16_t>(messageData[0] >> 4) | (static_cast<std::uint16_t>(messageData[1]) << 4));
 							commandData.ddi = static_cast<std::uint16_t>(messageData[2]) |
 							  (static_cast<std::uint16_t>(messageData[3]) << 8);
-							commandData.processDataValue = (static_cast<std::uint32_t>(messageData[4]) |
-							                                (static_cast<std::uint16_t>(messageData[5]) << 8) |
-							                                (static_cast<std::uint16_t>(messageData[6]) << 16) |
-							                                (static_cast<std::uint16_t>(messageData[7]) << 24));
+							commandData.processDataValue = (static_cast<std::int32_t>(messageData[4]) |
+							                                (static_cast<std::int32_t>(messageData[5]) << 8) |
+							                                (static_cast<std::int32_t>(messageData[6]) << 16) |
+							                                (static_cast<std::int32_t>(messageData[7]) << 24));
 
 							auto previousCommand = std::find(parentTC->measurementMaximumThresholdCommands.begin(), parentTC->measurementMaximumThresholdCommands.end(), commandData);
 							if (parentTC->measurementMaximumThresholdCommands.end() == previousCommand)
@@ -1697,17 +1686,15 @@ namespace isobus
 						case ProcessDataCommands::MeasurementMinimumWithinThreshold:
 						{
 							ProcessDataCallbackInfo commandData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-							const std::lock_guard<std::mutex> lock(parentTC->clientMutex);
-#endif
+							LOCK_GUARD(Mutex, clientMutex);
 
 							commandData.elementNumber = (static_cast<std::uint16_t>(messageData[0] >> 4) | (static_cast<std::uint16_t>(messageData[1]) << 4));
 							commandData.ddi = static_cast<std::uint16_t>(messageData[2]) |
 							  (static_cast<std::uint16_t>(messageData[3]) << 8);
-							commandData.processDataValue = (static_cast<std::uint32_t>(messageData[4]) |
-							                                (static_cast<std::uint16_t>(messageData[5]) << 8) |
-							                                (static_cast<std::uint16_t>(messageData[6]) << 16) |
-							                                (static_cast<std::uint16_t>(messageData[7]) << 24));
+							commandData.processDataValue = (static_cast<std::int32_t>(messageData[4]) |
+							                                (static_cast<std::int32_t>(messageData[5]) << 8) |
+							                                (static_cast<std::int32_t>(messageData[6]) << 16) |
+							                                (static_cast<std::int32_t>(messageData[7]) << 24));
 
 							auto previousCommand = std::find(parentTC->measurementMinimumThresholdCommands.begin(), parentTC->measurementMinimumThresholdCommands.end(), commandData);
 							if (parentTC->measurementMinimumThresholdCommands.end() == previousCommand)
@@ -1732,17 +1719,15 @@ namespace isobus
 						case ProcessDataCommands::MeasurementChangeThreshold:
 						{
 							ProcessDataCallbackInfo commandData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-							const std::lock_guard<std::mutex> lock(parentTC->clientMutex);
-#endif
+							LOCK_GUARD(Mutex, clientMutex);
 
 							commandData.elementNumber = (static_cast<std::uint16_t>(messageData[0] >> 4) | (static_cast<std::uint16_t>(messageData[1]) << 4));
 							commandData.ddi = static_cast<std::uint16_t>(messageData[2]) |
 							  (static_cast<std::uint16_t>(messageData[3]) << 8);
-							commandData.processDataValue = (static_cast<std::uint32_t>(messageData[4]) |
-							                                (static_cast<std::uint16_t>(messageData[5]) << 8) |
-							                                (static_cast<std::uint16_t>(messageData[6]) << 16) |
-							                                (static_cast<std::uint16_t>(messageData[7]) << 24));
+							commandData.processDataValue = (static_cast<std::int32_t>(messageData[4]) |
+							                                (static_cast<std::int32_t>(messageData[5]) << 8) |
+							                                (static_cast<std::int32_t>(messageData[6]) << 16) |
+							                                (static_cast<std::int32_t>(messageData[7]) << 24));
 
 							auto previousCommand = std::find(parentTC->measurementOnChangeThresholdCommands.begin(), parentTC->measurementOnChangeThresholdCommands.end(), commandData);
 							if (parentTC->measurementOnChangeThresholdCommands.end() == previousCommand)
@@ -2018,7 +2003,7 @@ namespace isobus
 		                                                      partnerControlFunction);
 	}
 
-	bool TaskControllerClient::send_value_command(std::uint16_t elementNumber, std::uint16_t ddi, std::uint32_t value) const
+	bool TaskControllerClient::send_value_command(std::uint16_t elementNumber, std::uint16_t ddi, std::int32_t value) const
 	{
 		const std::array<std::uint8_t, CAN_DATA_LENGTH> buffer = { static_cast<std::uint8_t>(static_cast<std::uint8_t>(ProcessDataCommands::Value) |
 			                                                                                   (static_cast<std::uint8_t>(elementNumber & 0x0F) << 4)),
@@ -2091,6 +2076,23 @@ namespace isobus
 		currentState = newState;
 	}
 
+	void TaskControllerClient::select_language_command_partner()
+	{
+		if (serverVersion < static_cast<std::uint8_t>(Version::SecondPublishedEdition))
+		{
+			if (nullptr == primaryVirtualTerminal)
+			{
+				languageCommandInterface.set_partner(nullptr); // TC might not reply and no VT specified, so just see if anyone knows.
+				LOG_WARNING("[TC]: The TC is < version 4 but no VT was provided. Language data will be requested globally, which might not be ideal.");
+			}
+			else
+			{
+				languageCommandInterface.set_partner(primaryVirtualTerminal);
+				LOG_DEBUG("[TC]: Using VT as the partner for language data, because the TC's version is less than 4.");
+			}
+		}
+	}
+
 	void TaskControllerClient::worker_thread_function()
 	{
 #if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
@@ -2150,9 +2152,7 @@ namespace isobus
 	void TaskControllerClient::on_value_changed_trigger(std::uint16_t elementNumber, std::uint16_t DDI)
 	{
 		ProcessDataCallbackInfo requestData = { 0, 0, 0, 0, false, false };
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		const std::lock_guard<std::mutex> lock(clientMutex);
-#endif
+		LOCK_GUARD(Mutex, clientMutex);
 
 		requestData.ackRequested = false;
 		requestData.elementNumber = elementNumber;

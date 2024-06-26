@@ -18,7 +18,7 @@
 ///
 /// @author Adrian Del Grosso
 ///
-/// @copyright 2023 Adrian Del Grosso
+/// @copyright 2023 The Open-Agriculture Developers
 //================================================================================================
 #ifndef ISOBUS_SHORTCUT_BUTTON_INTERFACE_HPP
 #define ISOBUS_SHORTCUT_BUTTON_INTERFACE_HPP
@@ -26,7 +26,6 @@
 #include "isobus/isobus/can_NAME.hpp"
 #include "isobus/isobus/can_internal_control_function.hpp"
 #include "isobus/isobus/can_message.hpp"
-#include "isobus/isobus/can_protocol.hpp"
 #include "isobus/utility/event_dispatcher.hpp"
 #include "isobus/utility/processing_flags.hpp"
 

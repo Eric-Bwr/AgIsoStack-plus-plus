@@ -77,9 +77,14 @@ int main()
 
 	const isobus::NAMEFilter filterTaskController(isobus::NAME::NAMEParameters::FunctionCode, static_cast<std::uint8_t>(isobus::NAME::Function::TaskController));
 	const isobus::NAMEFilter filterTaskControllerInstance(isobus::NAME::NAMEParameters::FunctionInstance, 0);
-	const std::vector<isobus::NAMEFilter> tcNameFilters = { filterTaskController, filterTaskControllerInstance };
-	auto TestInternalECU = isobus::InternalControlFunction::create(TestDeviceNAME, 0x1C, 0);
-	auto TestPartnerTC = isobus::PartneredControlFunction::create(0, tcNameFilters);
+	const isobus::NAMEFilter filterTaskControllerIndustryGroup(isobus::NAME::NAMEParameters::IndustryGroup, static_cast<std::uint8_t>(isobus::NAME::IndustryGroup::AgriculturalAndForestryEquipment));
+	const isobus::NAMEFilter filterTaskControllerDeviceClass(isobus::NAME::NAMEParameters::DeviceClass, static_cast<std::uint8_t>(isobus::NAME::DeviceClass::NonSpecific));
+	const std::vector<isobus::NAMEFilter> tcNameFilters = { filterTaskController,
+		                                                      filterTaskControllerInstance,
+		                                                      filterTaskControllerIndustryGroup,
+		                                                      filterTaskControllerDeviceClass };
+	auto TestInternalECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(TestDeviceNAME, 0);
+	auto TestPartnerTC = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(0, tcNameFilters);
 
 	TestTCClient = std::make_shared<isobus::TaskControllerClient>(TestPartnerTC, TestInternalECU, nullptr);
 

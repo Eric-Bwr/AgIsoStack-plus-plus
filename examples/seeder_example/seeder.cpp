@@ -4,7 +4,7 @@
 /// @brief This is the implementation of an example seeder application
 /// @author Adrian Del Grosso
 ///
-/// @copyright 2023 Adrian Del Grosso
+/// @copyright 2023 The Open-Agriculture Developers
 //================================================================================================
 #include "seeder.hpp"
 
@@ -64,15 +64,21 @@ bool Seeder::initialize()
 	TestDeviceNAME.set_ecu_instance(0);
 	TestDeviceNAME.set_function_instance(0);
 	TestDeviceNAME.set_device_class_instance(0);
-	TestDeviceNAME.set_manufacturer_code(64);
+	TestDeviceNAME.set_manufacturer_code(1407);
 
 	const isobus::NAMEFilter filterVirtualTerminal(isobus::NAME::NAMEParameters::FunctionCode, static_cast<std::uint8_t>(isobus::NAME::Function::VirtualTerminal));
 	const isobus::NAMEFilter filterTaskController(isobus::NAME::NAMEParameters::FunctionCode, static_cast<std::uint8_t>(isobus::NAME::Function::TaskController));
+	const isobus::NAMEFilter filterTaskControllerInstance(isobus::NAME::NAMEParameters::FunctionInstance, 0);
+	const isobus::NAMEFilter filterTaskControllerIndustryGroup(isobus::NAME::NAMEParameters::IndustryGroup, static_cast<std::uint8_t>(isobus::NAME::IndustryGroup::AgriculturalAndForestryEquipment));
+	const isobus::NAMEFilter filterTaskControllerDeviceClass(isobus::NAME::NAMEParameters::DeviceClass, static_cast<std::uint8_t>(isobus::NAME::DeviceClass::NonSpecific));
+	const std::vector<isobus::NAMEFilter> tcNameFilters = { filterTaskController,
+		                                                      filterTaskControllerInstance,
+		                                                      filterTaskControllerIndustryGroup,
+		                                                      filterTaskControllerDeviceClass };
 	const std::vector<isobus::NAMEFilter> vtNameFilters = { filterVirtualTerminal };
-	const std::vector<isobus::NAMEFilter> tcNameFilters = { filterTaskController };
-	auto InternalECU = isobus::InternalControlFunction::create(TestDeviceNAME, 0x81, 0);
-	auto PartnerVT = isobus::PartneredControlFunction::create(0, vtNameFilters);
-	auto PartnerTC = isobus::PartneredControlFunction::create(0, tcNameFilters);
+	auto InternalECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(TestDeviceNAME, 0);
+	auto PartnerVT = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(0, vtNameFilters);
+	auto PartnerTC = isobus::CANNetworkManager::CANNetwork.create_partnered_control_function(0, tcNameFilters);
 
 	diagnosticProtocol = std::make_unique<isobus::DiagnosticProtocol>(InternalECU);
 	diagnosticProtocol->initialize();

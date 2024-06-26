@@ -13,7 +13,7 @@ using namespace isobus;
 TEST(DIAGNOSTIC_PROTOCOL_TESTS, CreateAndDestroyProtocolObjects)
 {
 	NAME TestDeviceNAME(0);
-	auto TestInternalECU = InternalControlFunction::create(TestDeviceNAME, 0x1C, 0);
+	auto TestInternalECU = CANNetworkManager::CANNetwork.create_internal_control_function(TestDeviceNAME, 0, 0x1C);
 
 	std::unique_ptr<DiagnosticProtocol> diagnosticProtocol;
 	diagnosticProtocol.reset(new DiagnosticProtocol(TestInternalECU));
@@ -27,11 +27,11 @@ TEST(DIAGNOSTIC_PROTOCOL_TESTS, CreateAndDestroyProtocolObjects)
 	diagnosticProtocol.reset();
 
 	EXPECT_EQ(pgnRequestProtocol->get_number_registered_pgn_request_callbacks(), 0);
-	EXPECT_EQ(pgnRequestProtocol->get_number_registered_request_for_repetition_rate_callbacks(), 0);
+	EXPECT_EQ(pgnRequestProtocol->get_number_registered_request_for_repetition_rate_callbacks(), 1); // The heartbeat is registered by default
 
 	pgnRequestProtocol.reset();
 
-	ASSERT_TRUE(TestInternalECU->destroy());
+	CANNetworkManager::CANNetwork.deactivate_control_function(TestInternalECU);
 }
 
 TEST(DIAGNOSTIC_PROTOCOL_TESTS, MessageEncoding)
@@ -1320,5 +1320,5 @@ TEST(DIAGNOSTIC_PROTOCOL_TESTS, MessageEncoding)
 	EXPECT_FALSE(protocolUnderTest.get_initialized());
 	CANHardwareInterface::stop();
 
-	TestInternalECU->destroy();
+	CANNetworkManager::CANNetwork.deactivate_control_function(TestInternalECU);
 }

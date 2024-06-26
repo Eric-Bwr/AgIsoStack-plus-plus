@@ -4,7 +4,7 @@
 /// @brief Implements the client for a virtual terminal
 /// @author Adrian Del Grosso
 ///
-/// @copyright 2022 Adrian Del Grosso
+/// @copyright 2022 The Open-Agriculture Developers
 //================================================================================================
 
 #include "isobus/isobus/isobus_virtual_terminal_client.hpp"
@@ -3170,13 +3170,13 @@ namespace isobus
 							{
 								parentVT->unsupportedFunctions.push_back(unsupportedFunction);
 							}
-							LOG_WARNING("[VT]: Server indicated VT Function '%llu' is unsupported, caching it", unsupportedFunction);
+							LOG_WARNING("[VT]: Server indicated VT Function '%hu' is unsupported, caching it", unsupportedFunction);
 						}
 						break;
 						default:
 						{
 							std::uint8_t unsupportedFunction = message.get_uint8_at(0);
-							LOG_WARNING("[VT]: Server sent function '%llu' which we do not support", unsupportedFunction);
+							LOG_WARNING("[VT]: Server sent function '%hu' which we do not support", unsupportedFunction);
 							std::array<std::uint8_t, CAN_DATA_LENGTH> buffer{
 								static_cast<std::uint8_t>(Function::UnsupportedVTFunctionMessage),
 								unsupportedFunction,
@@ -4503,14 +4503,11 @@ namespace isobus
 			return true;
 		}
 
+		LOCK_GUARD(Mutex, commandQueueMutex);
 		if (replace && replace_command(data))
 		{
 			return true;
 		}
-
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		std::lock_guard<std::mutex> lock(commandQueueMutex);
-#endif
 		commandQueue.emplace_back(data);
 		return true;
 	}
@@ -4534,6 +4531,10 @@ namespace isobus
 					it = commandQueue.erase(it);
 				}
 			}
+			else
+			{
+				it++;
+			}
 		}
 		return alreadyReplaced;
 	}
@@ -4544,9 +4545,7 @@ namespace isobus
 		{
 			return;
 		}
-#if !defined CAN_STACK_DISABLE_THREADS && !defined ARDUINO
-		std::lock_guard<std::mutex> lock(commandQueueMutex);
-#endif
+		LOCK_GUARD(Mutex, commandQueueMutex);
 		for (auto it = commandQueue.begin(); it != commandQueue.end();)
 		{
 			if (send_command(*it))

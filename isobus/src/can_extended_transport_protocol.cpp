@@ -289,7 +289,7 @@ namespace isobus
 				session->state = StateMachineState::None;
 				bool successful = (numberOfBytesTransferred == session->get_message_length());
 				close_session(session, successful);
-				LOG_DEBUG("[ETP]: Completed tx session for 0x%05X from %hu", parameterGroupNumber, source->get_address());
+				LOG_DEBUG("[ETP]: Completed tx session for 0x%05X from %hu (successful=%s)", parameterGroupNumber, source->get_address(), successful ? "true" : "false");
 			}
 			else
 			{
@@ -913,7 +913,6 @@ namespace isobus
 		auto result = std::find_if(activeSessions.begin(), activeSessions.end(), [&](const std::shared_ptr<ExtendedTransportProtocolSession> &session) {
 			return session->matches(source, destination);
 		});
-		// Instead of returning a pointer, we return by reference to indicate it should not be deleted or stored
 		return (activeSessions.end() != result) ? (*result) : nullptr;
 	}
 

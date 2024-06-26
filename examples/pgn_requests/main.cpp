@@ -52,6 +52,7 @@ bool example_proprietary_a_pgn_request_handler(std::uint32_t parameterGroupNumbe
 
 bool example_proprietary_a_request_for_repetition_rate_handler(std::uint32_t parameterGroupNumber,
                                                                std::shared_ptr<isobus::ControlFunction> requestingControlFunction,
+                                                               std::shared_ptr<isobus::ControlFunction>,
                                                                std::uint32_t repetitionRate,
                                                                void *)
 {
@@ -127,7 +128,7 @@ int main()
 	TestDeviceNAME.set_device_class_instance(0);
 	TestDeviceNAME.set_manufacturer_code(1407);
 
-	auto TestInternalECU = isobus::InternalControlFunction::create(TestDeviceNAME, 0x1C, 0);
+	auto TestInternalECU = isobus::CANNetworkManager::CANNetwork.create_internal_control_function(TestDeviceNAME, 0);
 	std::signal(SIGINT, signal_handler);
 
 	// Make sure address claiming is done before we continue

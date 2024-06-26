@@ -51,12 +51,16 @@ set(TEST_SRC
     event_dispatcher_tests.cpp
     isb_tests.cpp
     cf_functionalities_tests.cpp
+    time_date_tests.cpp
     guidance_tests.cpp
     speed_distance_message_tests.cpp
     maintain_power_tests.cpp
     vt_object_tests.cpp
     nmea2000_message_tests.cpp
     isobus_data_dictionary_tests.cpp
+    can_message_tests.cpp
+    heartbeat_tests.cpp
+    tc_server_tests.cpp
     helpers/control_function_helpers.cpp
     helpers/messaging_helpers.cpp)
 

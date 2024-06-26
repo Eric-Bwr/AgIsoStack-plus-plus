@@ -4,6 +4,7 @@
 #include "isobus/hardware_integration/virtual_can_plugin.hpp"
 #include "isobus/isobus/can_network_manager.hpp"
 #include "isobus/isobus/isobus_task_controller_client.hpp"
+#include "isobus/isobus/isobus_virtual_terminal_client.hpp"
 #include "isobus/utility/system_timing.hpp"
 
 #include "helpers/control_function_helpers.hpp"
@@ -13,8 +14,8 @@ using namespace isobus;
 class DerivedTestTCClient : public TaskControllerClient
 {
 public:
-	DerivedTestTCClient(std::shared_ptr<PartneredControlFunction> partner, std::shared_ptr<InternalControlFunction> clientSource) :
-	  TaskControllerClient(partner, clientSource, nullptr){};
+	DerivedTestTCClient(std::shared_ptr<PartneredControlFunction> partner, std::shared_ptr<InternalControlFunction> clientSource, std::shared_ptr<PartneredControlFunction> primaryVT = nullptr) :
+	  TaskControllerClient(partner, clientSource, primaryVT){};
 
 	bool test_wrapper_send_working_set_master() const
 	{
@@ -472,10 +473,8 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, MessageEncoding)
 	CANHardwareInterface::stop();
 	CANHardwareInterface::set_number_of_can_channels(0);
 
-	CANNetworkManager::CANNetwork.update(); //! @todo: quick hack for clearing the transmit queue, can be removed once network manager' singleton is removed
-	//! @todo try to reduce the reference count, such that that we don't use a control function after it is destroyed
-	ASSERT_TRUE(tcPartner->destroy(3));
-	ASSERT_TRUE(internalECU->destroy(3));
+	CANNetworkManager::CANNetwork.deactivate_control_function(tcPartner);
+	CANNetworkManager::CANNetwork.deactivate_control_function(internalECU);
 }
 
 TEST(TASK_CONTROLLER_CLIENT_TESTS, BadPartnerDeathTest)
@@ -483,13 +482,12 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, BadPartnerDeathTest)
 	NAME clientNAME(0);
 	clientNAME.set_industry_group(2);
 	clientNAME.set_function_code(static_cast<std::uint8_t>(NAME::Function::RateControl));
-	auto internalECU = InternalControlFunction::create(clientNAME, 0x81, 0);
+	auto internalECU = CANNetworkManager::CANNetwork.create_internal_control_function(clientNAME, 0, 0x81);
 	DerivedTestTCClient interfaceUnderTest(nullptr, internalECU);
 	ASSERT_FALSE(interfaceUnderTest.get_is_initialized());
 	EXPECT_DEATH(interfaceUnderTest.initialize(false), "");
 
-	//! @todo try to reduce the reference count, such that that we don't use a control function after it is destroyed
-	EXPECT_TRUE(internalECU->destroy(3));
+	CANNetworkManager::CANNetwork.deactivate_control_function(internalECU);
 }
 
 TEST(TASK_CONTROLLER_CLIENT_TESTS, BadICFDeathTest)
@@ -498,11 +496,11 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, BadICFDeathTest)
 	const isobus::NAMEFilter testFilter(isobus::NAME::NAMEParameters::FunctionCode, static_cast<std::uint8_t>(isobus::NAME::Function::TaskController));
 	vtNameFilters.push_back(testFilter);
 
-	auto tcPartner = PartneredControlFunction::create(0, vtNameFilters);
+	auto tcPartner = CANNetworkManager::CANNetwork.create_partnered_control_function(0, vtNameFilters);
 	DerivedTestTCClient interfaceUnderTest(tcPartner, nullptr);
 	ASSERT_FALSE(interfaceUnderTest.get_is_initialized());
 	EXPECT_DEATH(interfaceUnderTest.initialize(false), "");
-	ASSERT_TRUE(tcPartner->destroy(3)); // Account for the pointer in the TC client and the language interface
+	CANNetworkManager::CANNetwork.deactivate_control_function(tcPartner);
 }
 
 TEST(TASK_CONTROLLER_CLIENT_TESTS, BadBinaryPointerDDOPDeathTest)
@@ -1110,10 +1108,8 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, StateMachineTests)
 	interfaceUnderTest.terminate();
 	CANHardwareInterface::stop();
 
-	CANNetworkManager::CANNetwork.update(); //! @todo: quick hack for clearing the transmit queue, can be removed once network manager' singleton is removed
-	//! @todo try to reduce the reference count, such that that we don't use a control function after it is destroyed
-	ASSERT_TRUE(tcPartner->destroy(4));
-	ASSERT_TRUE(internalECU->destroy(5));
+	CANNetworkManager::CANNetwork.deactivate_control_function(tcPartner);
+	CANNetworkManager::CANNetwork.deactivate_control_function(internalECU);
 }
 
 TEST(TASK_CONTROLLER_CLIENT_TESTS, ClientSettings)
@@ -1148,7 +1144,7 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, TimeoutTests)
 	clientNAME.set_industry_group(2);
 	clientNAME.set_ecu_instance(1);
 	clientNAME.set_function_code(static_cast<std::uint8_t>(NAME::Function::RateControl));
-	auto internalECU = InternalControlFunction::create(clientNAME, 0x84, 0);
+	auto internalECU = CANNetworkManager::CANNetwork.create_internal_control_function(clientNAME, 0, 0x84);
 
 	ASSERT_FALSE(internalECU->get_address_valid());
 
@@ -1156,7 +1152,7 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, TimeoutTests)
 	const isobus::NAMEFilter testFilter(isobus::NAME::NAMEParameters::FunctionCode, static_cast<std::uint8_t>(isobus::NAME::Function::TaskController));
 	vtNameFilters.push_back(testFilter);
 
-	auto tcPartner = PartneredControlFunction::create(0, vtNameFilters);
+	auto tcPartner = CANNetworkManager::CANNetwork.create_partnered_control_function(0, vtNameFilters);
 
 	CANNetworkManager::CANNetwork.update();
 
@@ -1309,11 +1305,11 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, TimeoutTests)
 	interfaceUnderTest.update();
 	EXPECT_EQ(interfaceUnderTest.test_wrapper_get_state(), TaskControllerClient::StateMachineState::RequestLanguage);
 
-	// Test lack of timeout waiting for language (hold state)
+	// Test that we can't get stuck in the request language state
 	interfaceUnderTest.test_wrapper_set_state(TaskControllerClient::StateMachineState::WaitForLanguageResponse);
 	EXPECT_EQ(interfaceUnderTest.test_wrapper_get_state(), TaskControllerClient::StateMachineState::WaitForLanguageResponse);
 	interfaceUnderTest.update();
-	EXPECT_EQ(interfaceUnderTest.test_wrapper_get_state(), TaskControllerClient::StateMachineState::WaitForLanguageResponse);
+	EXPECT_EQ(interfaceUnderTest.test_wrapper_get_state(), TaskControllerClient::StateMachineState::ProcessDDOP);
 
 	// Test timeout waiting for object pool transfer response
 	interfaceUnderTest.test_wrapper_set_state(TaskControllerClient::StateMachineState::WaitForObjectPoolTransferResponse, 0);
@@ -1337,9 +1333,8 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, TimeoutTests)
 	interfaceUnderTest.update();
 	EXPECT_EQ(interfaceUnderTest.test_wrapper_get_state(), TaskControllerClient::StateMachineState::Disconnected);
 
-	//! @todo try to reduce the reference count, such that that we don't use a control function after it is destroyed
-	ASSERT_TRUE(tcPartner->destroy(3));
-	ASSERT_TRUE(internalECU->destroy(3));
+	CANNetworkManager::CANNetwork.deactivate_control_function(tcPartner);
+	CANNetworkManager::CANNetwork.deactivate_control_function(internalECU);
 }
 
 TEST(TASK_CONTROLLER_CLIENT_TESTS, WorkerThread)
@@ -1348,13 +1343,13 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, WorkerThread)
 	clientNAME.set_industry_group(2);
 	clientNAME.set_ecu_instance(1);
 	clientNAME.set_function_code(static_cast<std::uint8_t>(NAME::Function::RateControl));
-	auto internalECU = InternalControlFunction::create(clientNAME, 0x85, 0);
+	auto internalECU = CANNetworkManager::CANNetwork.create_internal_control_function(clientNAME, 0, 0x85);
 
 	std::vector<isobus::NAMEFilter> vtNameFilters;
 	const isobus::NAMEFilter testFilter(isobus::NAME::NAMEParameters::FunctionCode, static_cast<std::uint8_t>(isobus::NAME::Function::TaskController));
 	vtNameFilters.push_back(testFilter);
 
-	auto tcPartner = PartneredControlFunction::create(0, vtNameFilters);
+	auto tcPartner = CANNetworkManager::CANNetwork.create_partnered_control_function(0, vtNameFilters);
 
 	CANNetworkManager::CANNetwork.update();
 
@@ -1362,7 +1357,7 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, WorkerThread)
 	EXPECT_NO_THROW(interfaceUnderTest.initialize(true));
 
 	EXPECT_NO_THROW(interfaceUnderTest.terminate());
-	ASSERT_TRUE(tcPartner->destroy(3)); // Account for the pointer in the TC client and the language interface
+	CANNetworkManager::CANNetwork.deactivate_control_function(tcPartner); // Account for the pointer in the TC client and the language interface
 }
 
 static bool valueRequested = false;
@@ -1371,11 +1366,11 @@ static std::uint16_t requestedDDI = 0;
 static std::uint16_t commandedDDI = 0;
 static std::uint16_t requestedElement = 0;
 static std::uint16_t commandedElement = 0;
-static std::uint32_t commandedValue = 0;
+static std::int32_t commandedValue = 0;
 
 bool request_value_command_callback(std::uint16_t element,
                                     std::uint16_t ddi,
-                                    std::uint32_t &,
+                                    std::int32_t &,
                                     void *)
 {
 	requestedElement = element;
@@ -1386,7 +1381,7 @@ bool request_value_command_callback(std::uint16_t element,
 
 bool value_command_callback(std::uint16_t element,
                             std::uint16_t ddi,
-                            std::uint32_t value,
+                            std::int32_t value,
                             void *)
 {
 	commandedElement = element;
@@ -1510,6 +1505,29 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, CallbackTests)
 	valueRequested = false;
 	requestedDDI = 0;
 	requestedElement = 0;
+
+	// Test negative number
+	testFrame.identifier = 0x18CB86F7;
+	testFrame.data[0] = 0x2A;
+	testFrame.data[1] = 0x05;
+	testFrame.data[2] = 0x29;
+	testFrame.data[3] = 0x48;
+	testFrame.data[4] = 0x11;
+	testFrame.data[5] = 0x01;
+	testFrame.data[6] = 0x00;
+	testFrame.data[7] = 0xF0;
+	CANNetworkManager::CANNetwork.process_receive_can_message_frame(testFrame);
+	CANNetworkManager::CANNetwork.update();
+	interfaceUnderTest.update();
+
+	EXPECT_EQ(true, valueCommanded);
+	EXPECT_EQ(commandedDDI, 0x4829);
+	EXPECT_EQ(commandedElement, 0x52);
+	EXPECT_EQ(commandedValue, -268435183);
+
+	valueCommanded = false;
+	commandedDDI = 0;
+	commandedValue = 0;
 	interfaceUnderTest.remove_request_value_callback(request_value_command_callback, nullptr);
 
 	// Create a request for a value.
@@ -1529,10 +1547,6 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, CallbackTests)
 	EXPECT_EQ(false, valueRequested);
 	EXPECT_EQ(requestedDDI, 0);
 	EXPECT_EQ(requestedElement, 0);
-	EXPECT_EQ(true, valueCommanded);
-	EXPECT_EQ(commandedDDI, 0x4829);
-	EXPECT_EQ(commandedElement, 0x52);
-	EXPECT_EQ(commandedValue, 0x5060708);
 
 	valueCommanded = false;
 	commandedDDI = 0;
@@ -1672,8 +1686,79 @@ TEST(TASK_CONTROLLER_CLIENT_TESTS, CallbackTests)
 
 	CANHardwareInterface::stop();
 
-	CANNetworkManager::CANNetwork.update(); //! @todo: quick hack for clearing the transmit queue, can be removed once network manager' singleton is removed
-	//! @todo try to reduce the reference count, such that that we don't use a control function after it is destroyed
-	ASSERT_TRUE(TestPartnerTC->destroy(3));
-	ASSERT_TRUE(internalECU->destroy(3));
+	CANNetworkManager::CANNetwork.deactivate_control_function(TestPartnerTC);
+	CANNetworkManager::CANNetwork.deactivate_control_function(internalECU);
+}
+
+TEST(TASK_CONTROLLER_CLIENT_TESTS, LanguageCommandFallback)
+{
+	VirtualCANPlugin serverTC;
+	serverTC.open();
+
+	CANHardwareInterface::set_number_of_can_channels(1);
+	CANHardwareInterface::assign_can_channel_frame_handler(0, std::make_shared<VirtualCANPlugin>());
+	CANHardwareInterface::start();
+
+	auto internalECU = test_helpers::claim_internal_control_function(0xFC, 0);
+	auto TestPartnerTC = test_helpers::force_claim_partnered_control_function(0xFB, 0);
+	auto TestPartnerVT = test_helpers::force_claim_partnered_control_function(0xFA, 0);
+
+	DerivedTestTCClient interfaceUnderTest(TestPartnerTC, internalECU, TestPartnerVT);
+	interfaceUnderTest.initialize(false);
+
+	std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+	// Get the virtual CAN plugin back to a known state
+	CANMessageFrame testFrame = {};
+	while (!serverTC.get_queue_empty())
+	{
+		serverTC.read_frame(testFrame);
+	}
+	ASSERT_TRUE(serverTC.get_queue_empty());
+
+	auto blankDDOP = std::make_shared<DeviceDescriptorObjectPool>();
+	interfaceUnderTest.configure(blankDDOP, 1, 32, 32, true, false, true, false, true);
+
+	// Force a status message out of the TC which states it's version 4
+	testFrame.identifier = 0x18CBFFFB;
+	testFrame.data[0] = 0x10; // Mux
+	testFrame.data[1] = 0x04; // Version number (Version 4)
+	testFrame.data[2] = 0xFF; // Max boot time (Not available)
+	testFrame.data[3] = 0x1F; // Supports all options
+	testFrame.data[4] = 0x00; // Reserved options = 0
+	testFrame.data[5] = 0x01; // Number of booms for section control (1)
+	testFrame.data[6] = 0x20; // Number of sections for section control (32)
+	testFrame.data[7] = 0x10; // Number channels for position based control (16)
+	CANNetworkManager::CANNetwork.process_receive_can_message_frame(testFrame);
+	CANNetworkManager::CANNetwork.update();
+
+	interfaceUnderTest.test_wrapper_set_state(TaskControllerClient::StateMachineState::RequestLanguage);
+	ASSERT_EQ(interfaceUnderTest.test_wrapper_get_state(), TaskControllerClient::StateMachineState::RequestLanguage);
+	interfaceUnderTest.update();
+
+	serverTC.read_frame(testFrame);
+
+	EXPECT_EQ(testFrame.identifier, 0x18EAFBFC); // Make sure we got the request for language, target the TC
+
+	// Now just sit here and wait for the timeout to occur, 2s
+	std::this_thread::sleep_for(std::chrono::milliseconds(2001));
+	interfaceUnderTest.update();
+	interfaceUnderTest.update();
+
+	// Now we should see another request, this time to the VT
+	serverTC.read_frame(testFrame);
+	EXPECT_EQ(testFrame.identifier, 0x18EAFAFC); // Make sure we got the request for language, target the VT
+
+	// Now get really crazy and don't respond to that
+	std::this_thread::sleep_for(std::chrono::milliseconds(6001));
+	interfaceUnderTest.update();
+
+	// Test that we didn't get stuck in the request language state
+	EXPECT_EQ(interfaceUnderTest.test_wrapper_get_state(), TaskControllerClient::StateMachineState::ProcessDDOP);
+	CANNetworkManager::CANNetwork.deactivate_control_function(TestPartnerTC);
+	CANNetworkManager::CANNetwork.deactivate_control_function(TestPartnerVT);
+	CANNetworkManager::CANNetwork.deactivate_control_function(internalECU);
+
+	CANHardwareInterface::stop();
+	CANNetworkManager::CANNetwork.update();
 }
